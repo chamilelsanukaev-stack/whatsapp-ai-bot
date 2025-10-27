@@ -1,11 +1,35 @@
 import express from "express";
 import fetch from "node-fetch";
+import fs from "fs";
 
 const app = express();
 app.use(express.json());
 
+// Knowledge base laden
+const KB = JSON.parse(fs.readFileSync("./kb.json", "utf8"));
+
+// --- einfache Text-Erkennung ---
+function findAnswer(text) {
+  const t = text.toLowerCase();
+  if (t.includes("preis") || t.includes("kosten")) return KB.preise;
+  if (t.includes("liefer")) return KB.lieferzeit;
+  if (t.includes("einbau") || t.includes("montage")) return KB.einbau;
+  if (t.includes("garantie")) return KB.garantie;
+  if (t.includes("pflegekasse")) return KB.pflegekasse;
+  if (t.includes("vorteil") || t.includes("nutzen")) return "Vorteile: " + KB.vorteile.join(", ");
+  if (t.includes("maß") || t.includes("größe")) return KB.masse;
+  if (t.includes("zahlung") || t.includes("raten")) return KB.zahlung;
+  if (t.includes("platz") || t.includes("passen")) return KB.einwaende.platz;
+  if (t.includes("teuer")) return KB.einwaende.teuer;
+  if (t.includes("produkt") || t.includes("was ist eazystep")) return KB.produkt;
+  if (t.includes("angebot") || t.includes("bestellen")) return KB.abschluss;
+  return null;
+}
+
+// Healthcheck
 app.get("/", (_, res) => res.status(200).send("OK"));
 
+// Verify Webhook (Meta)
 app.get("/webhook", (req, res) => {
   const VERIFY_TOKEN = "meinverifytoken";
   if (req.query["hub.verify_token"] === VERIFY_TOKEN)
@@ -13,6 +37,7 @@ app.get("/webhook", (req, res) => {
   res.sendStatus(403);
 });
 
+// Hauptlogik – Nachrichten empfangen
 app.post("/webhook", async (req, res) => {
   try {
     const entry = req.body?.entry?.[0];
@@ -22,29 +47,41 @@ app.post("/webhook", async (req, res) => {
 
     const from = msg.from;
     const text = msg.text?.body?.trim() || msg.button?.text || "";
-    console.log("Incoming text:", text);
+    console.log("Incoming:", text);
 
-    const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: "Du bist ein kurzer, präziser Support-Assistent von EazyStep. Max. 2 Sätze." },
-          { role: "user", content: text || "Hallo" }
-        ]
-      })
-    }).then(r => r.json());
+    // 1️⃣ Antwort aus Wissensdatenbank
+    let reply = findAnswer(text);
 
-    if (aiRes?.error) console.error("OpenAI error:", aiRes.error);
+    // 2️⃣ Fallback: KI (wenn keine Antwort gefunden)
+    if (!reply && process.env.OPENAI_API_KEY) {
+      const context = JSON.stringify(KB);
+      const ai = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content:
+                "Du bist ein freundlicher Vertriebsassistent von EazyStep. Antworte in maximal 2 Sätzen, korrekt nach diesen Fakten:",
+            },
+            { role: "system", content: context },
+            { role: "user", content: text },
+          ],
+        }),
+      }).then((r) => r.json());
 
-    const reply = aiRes?.choices?.[0]?.message?.content?.slice(0, 1000)
-      || "Danke! Wir melden uns bald.";
+      reply = ai?.choices?.[0]?.message?.content || "Danke! Wir melden uns bald.";
+    }
 
-    const sendRes = await fetch(`https://graph.facebook.com/v20.0/${process.env.PHONE_ID}/messages`, {
+    if (!reply) reply = "Danke! Wir melden uns bald.";
+
+    // 3️⃣ Antwort an WhatsApp senden
+    await fetch(`https://graph.facebook.com/v20.0/${process.env.PHONE_ID}/messages`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
@@ -53,14 +90,13 @@ app.post("/webhook", async (req, res) => {
       body: JSON.stringify({
         messaging_product: "whatsapp",
         to: from,
-        text: { body: reply }
-      })
-    }).then(r => r.json());
+        text: { body: reply },
+      }),
+    });
 
-    console.log("WA send result:", sendRes);
     res.sendStatus(200);
   } catch (e) {
-    console.error("Webhook error:", e);
+    console.error("Error:", e);
     res.sendStatus(200);
   }
 });
