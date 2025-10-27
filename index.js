@@ -4,10 +4,8 @@ import fetch from "node-fetch";
 const app = express();
 app.use(express.json());
 
-// Healthcheck
 app.get("/", (_, res) => res.status(200).send("OK"));
 
-// Verify
 app.get("/webhook", (req, res) => {
   const VERIFY_TOKEN = "meinverifytoken";
   if (req.query["hub.verify_token"] === VERIFY_TOKEN)
@@ -15,7 +13,6 @@ app.get("/webhook", (req, res) => {
   res.sendStatus(403);
 });
 
-// Incoming
 app.post("/webhook", async (req, res) => {
   try {
     const entry = req.body?.entry?.[0];
@@ -25,9 +22,9 @@ app.post("/webhook", async (req, res) => {
 
     const from = msg.from;
     const text = msg.text?.body?.trim() || msg.button?.text || "";
+    console.log("Incoming text:", text);
 
-    // KI-Antwort holen
-    const ai = await fetch("https://api.openai.com/v1/chat/completions", {
+    const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -36,39 +33,34 @@ app.post("/webhook", async (req, res) => {
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages: [
-          {
-            role: "system",
-            content: "Du bist ein kurzer, präziser Support-Assistent von EazyStep. Antworte freundlich und in max. 2 Sätzen.",
-          },
-          { role: "user", content: text || "Hallo" },
-        ],
-      }),
-    }).then((r) => r.json());
+          { role: "system", content: "Du bist ein kurzer, präziser Support-Assistent von EazyStep. Max. 2 Sätze." },
+          { role: "user", content: text || "Hallo" }
+        ]
+      })
+    }).then(r => r.json());
 
-    const reply =
-      ai?.choices?.[0]?.message?.content?.slice(0, 1000) ||
-      "Danke! Wir melden uns bald.";
+    if (aiRes?.error) console.error("OpenAI error:", aiRes.error);
 
-    // Antwort an WhatsApp
-    await fetch(
-      `https://graph.facebook.com/v20.0/${process.env.PHONE_ID}/messages`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to: from,
-          text: { body: reply },
-        }),
-      }
-    );
+    const reply = aiRes?.choices?.[0]?.message?.content?.slice(0, 1000)
+      || "Danke! Wir melden uns bald.";
 
+    const sendRes = await fetch(`https://graph.facebook.com/v20.0/${process.env.PHONE_ID}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: from,
+        text: { body: reply }
+      })
+    }).then(r => r.json());
+
+    console.log("WA send result:", sendRes);
     res.sendStatus(200);
   } catch (e) {
-    console.error(e);
+    console.error("Webhook error:", e);
     res.sendStatus(200);
   }
 });
