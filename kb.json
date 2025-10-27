@@ -1,0 +1,34 @@
+{
+  "produkt": "Patentierter Badezimmersitz mit Gehhilfe und Einstiegshilfe für Dusche oder Badewanne.",
+  "preise": "4180",
+  "lieferzeit": "ca. 1 Monat bearbeitung von Krankenkassenantrag, Lieferung innerhalb 1 Monat ab zustimmung kostenübernahme von Krankenkasse",
+  "einbau": "2–4 Stunden, ohne großen Umbau oder Schmutz",
+  "garantie": "?",
+  "vorteile": [
+    "Mehr Sicherheit",
+    "weniger Sturzgefahr",
+    "einfache Montage ohne Umbau."
+  ],
+  "masse": "?",
+  "zahlung": "wird von Krankenkasse / Pflegekasse bezahlt kunde hat keine kosten",
+  "einwaende": {
+    "teuer": "Deutlich günstiger als Badumbau; Zuschuss möglich.",
+    "platz": "Passt in Standard-Duschwannen 70–90 cm, bei Sondergrößen bitte Maße oder Foto senden."
+  },
+  "abschluss": "Vorqualifizierungs Formular ausfüllen, anschließend Vertriebler setzt sich in Kontakt mit Kunden",
+  "pflegekasse": "Wir helfen beim Antrag. Bei Pflegegrad Zuschuss bis 4.180 €.",
+  "vermieter": "Nein",
+  "varianten": "?",
+  "befestigung": "Zwei stabile Schienen an Wand oder Decke mit beweglicher Mittelschiene",
+  "material": "Metall, Gummi, Stoff",
+  "farbe": "Grün",
+  "gewicht": "?",
+  "reinigung": "Sitzbezug abnehmbar für reinigung",
+  "rueckgabe": "gesetzlich deutsche",
+  "belastbarkeit": "max 125kg",
+  "kontakt_flow": {
+    "step1": "Kunde schreibt Interesse.",
+    "step2": "Bot schickt Informationen sowie links zu online Formulare zu, Kunde füllt diese aus",
+    "step3": "Vertriebler übernimmt anhand des Formulars und bringt bestellung zum abschluss."
+  }
+}
