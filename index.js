@@ -19,7 +19,9 @@ try {
 
 // ✅ Webhook-Verify
 app.get("/webhook", (req, res) => {
-  const { ["hub.mode"]: mode, ["hub.verify_token"]: token, ["hub.challenge"]: challenge } = req.query;
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
   if (mode === "subscribe" && token === VERIFY_TOKEN) return res.status(200).send(challenge);
   return res.sendStatus(403);
 });
@@ -38,14 +40,19 @@ app.post("/webhook", async (req, res) => {
     // 1) KB-Antwort
     let reply = findAnswer(text);
 
-    // 2) Optional: OpenAI-Fallback (nur wenn nicht STRICT_KB)
+    // 2) Falls KB-Treffer: schön formulieren (nur umschreiben, keine neuen Fakten)
+    if (reply && process.env.OPENAI_API_KEY) {
+      reply = await beautifyReply(reply);
+    }
+
+    // 3) Kein KB-Treffer: optional GPT-Fallback, aber nur basierend auf KB
     if (!reply && !STRICT_KB && process.env.OPENAI_API_KEY) {
       reply = await getAIAnswer(text);
     }
 
-    if (!reply) reply = "Danke! Ich helfe dir gern zu EazyStep – frag z. B. nach Preis, Einbau oder Zuschuss.";
+    if (!reply) reply = "Gern helfe ich zu EazyStep – frag z. B. nach Preis, Einbau oder Zuschuss.";
 
-    // 3) Senden + Log
+    // 4) Senden
     const resp = await fetch(`https://graph.facebook.com/v20.0/${process.env.PHONE_ID}/messages`, {
       method: "POST",
       headers: {
@@ -55,7 +62,7 @@ app.post("/webhook", async (req, res) => {
       body: JSON.stringify({
         messaging_product: "whatsapp",
         to: from,
-        text: { body: reply.slice(0, 1000) }
+        text: { body: String(reply).slice(0, 1000) }
       })
     });
     const json = await resp.json();
@@ -97,8 +104,36 @@ function findAnswer(input) {
   return null;
 }
 
-// ---------- OpenAI (optional) ----------
-async function getAIAnswer(text) {
+// ---------- GPT: Schön formulieren (nur Umformulierung) ----------
+async function beautifyReply(text) {
+  try {
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "Formuliere folgenden Produkttext von EazyStep freundlich, klar und vertriebsorientiert um, ohne Fakten zu verändern. Maximal 2 Sätze." },
+          { role: "user", content: text }
+        ]
+      })
+    });
+    const data = await resp.json();
+    if (data?.error) {
+      console.error("OpenAI beautify error:", data.error);
+      return text;
+    }
+    return data?.choices?.[0]?.message?.content || text;
+  } catch {
+    return text;
+  }
+}
+
+// ---------- GPT-Fallback (benutzt NUR KB als Kontext) ----------
+async function getAIAnswer(userText) {
   try {
     const context = JSON.stringify(KB);
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -110,15 +145,15 @@ async function getAIAnswer(text) {
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: "Du bist ein kurzer, korrekter EazyStep-Berater. Nutze NUR die Fakten aus dem folgenden JSON, erfinde nichts. Max. 2 Sätze." },
+          { role: "system", content: "Du bist ein EazyStep-Berater. Antworte nur auf Basis des folgenden JSON (keine neuen Fakten). Max. 2 Sätze." },
           { role: "system", content: context },
-          { role: "user", content: text }
+          { role: "user", content: userText }
         ]
       })
     });
     const data = await r.json();
     if (data?.error) {
-      console.error("OpenAI error:", data.error);
+      console.error("OpenAI fallback error:", data.error);
       return null;
     }
     return data?.choices?.[0]?.message?.content || null;
